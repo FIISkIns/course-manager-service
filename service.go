@@ -1,10 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/julienschmidt/httprouter"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 )
@@ -15,9 +18,9 @@ type BaseCourseInfo struct {
 }
 
 type CourseInfo struct {
-	Id string `json:"id"`
-	Name       string `json:"name"`
-	URL         string `json:"url"`
+	Id   string `json:"id"`
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 type CourseList struct {
@@ -25,52 +28,31 @@ type CourseList struct {
 }
 
 var courseList CourseList
-
-func CourseListInit() {
-	//var courseInfo BaseCourseInfo
-	data, _ := ioutil.ReadFile("courses.json")
-	err := json.Unmarshal(data, &courseList)
-	if err != nil {
-		fmt.Println(err)
-	}
-	/*
-		Aici voi prelua titlurile si descrierile de la fiecare curs in parte. Pentru prototip le iau din fisier
-		for index, course := range courseList.URLs {
-			fmt.Println(course)
-			resp, err := http.Get("http://localhost:8003/") // aici url-ul va fi diferit pentru fiecare curs, in functie de course
-			if err != nil {
-				fmt.Println(err)
-			}
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				fmt.Println(err)
-			}
-			json.Unmarshal(body, &courseInfo)
-			courseList.Titles[index] = courseInfo.Title
-			courseList.Descriptions[index] = courseInfo.Description
-		}*/
-}
+var database *sql.DB
 
 func HandleCourseGet(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	courseSearched := ps.ByName("course")
-	var courseInfo CourseInfo
-	var indexCourse int = -1
-	for index, course := range courseList.Courses{
-		fmt.Println(course)
-		if course.Id == courseSearched {
-			indexCourse = index
-		}
-	}
-	if indexCourse == -1 {
-		http.Error(w, "Course not found", 404)
-	} else {
-		courseInfo.Id = courseSearched
-		courseInfo.URL= courseList.Courses[indexCourse].URL
-		courseInfo.Name = courseList.Courses[indexCourse].Name
-		data, err := json.Marshal(&courseInfo)
+	course, err := getCourse(courseSearched)
+	if err != nil  {
+		http.Error(w, "Course does not exist", 404)
+	}else {
+		var courseInfo BaseCourseInfo
+		resp, err := http.Get(course.URL)
 		if err != nil {
 			fmt.Println(err)
 		}
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Println(err)
+		}
+		json.Unmarshal(body, &courseInfo)
+		course.Name = courseInfo.Title
+
+		data, err := json.Marshal(&course)
+		if err != nil {
+			http.Error(w, "Could not serialize course", http.StatusInternalServerError)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	}
@@ -79,7 +61,7 @@ func HandleCourseGet(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 func HandleCourseDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	courseDeleted := ps.ByName("course")
 	var indexDeleted int = -1
-	for index, course := range courseList.Courses{
+	for index, course := range courseList.Courses {
 		if course.Id == courseDeleted {
 			indexDeleted = index
 		}
@@ -87,7 +69,7 @@ func HandleCourseDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Pa
 	if indexDeleted == -1 {
 		http.Error(w, "Course not found", 404)
 	} else {
-		courseList.Courses= append(courseList.Courses[:indexDeleted], courseList.Courses[indexDeleted+1:]...)
+		courseList.Courses = append(courseList.Courses[:indexDeleted], courseList.Courses[indexDeleted+1:]...)
 		fmt.Fprintf(w, "Cursul a fost sters")
 	}
 	UpdateCourseList()
@@ -133,13 +115,32 @@ func HandleCoursePost(w http.ResponseWriter, r *http.Request, _ httprouter.Param
 }
 
 func HandleCoursesFunction(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	data, err := json.Marshal(&courseList)
-	if err != nil {
-		http.Error(w, "Could not serialize course list", http.StatusInternalServerError)
-	}
+	courses, err := getCourses("Select * from courselist")
+	if err != nil || courses == nil{
+		http.Error(w, "No courses available", 404)
+	} else {
+		var courseInfo BaseCourseInfo
+		for index, course := range courses.Courses {
+			resp, err := http.Get(course.URL)
+			if err != nil {
+				fmt.Println(err)
+			}
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println(err)
+			}
+			json.Unmarshal(body, &courseInfo)
+			courses.Courses[index].Name = courseInfo.Title
+		}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+		data, err := json.Marshal(&courses)
+		if err != nil {
+			http.Error(w, "Could not serialize course list", http.StatusInternalServerError)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+	}
 
 }
 
@@ -160,13 +161,56 @@ func UpdateCourseList() {
 
 }
 
+func getCourse(id string) (*CourseInfo, error) {
+	query := "Select id,url from courselist where id like '" + id + "'"
+	rows, err := database.Query(query)
+
+	if err != nil {
+		return nil, err
+	}
+	var item CourseInfo
+	rows.Next()
+		if err := rows.Scan(&item.Id, &item.URL); err != nil {
+			return nil, err
+		}
+	return &item, nil
+}
+
+func getCourses(sqlString string) (*CourseList, error) {
+	var courses CourseList
+	rows, err := database.Query(sqlString)
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		var item CourseInfo
+		if err := rows.Scan(&item.Id, &item.URL); err != nil {
+			return nil, err
+		}
+		courses.Courses = append(courses.Courses, item)
+	}
+
+	if len(courses.Courses) == 0 {
+		return nil, nil
+	}
+
+	return &courses, nil
+}
+
 func main() {
-	CourseListInit()
+	//user:password@protocol(host_ip:host_port)/database
+	var err error
+	database, err = sql.Open("mysql", "Gafi:bagpicioarele@tcp(127.0.0.1:3306)/courses")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer database.Close()
 	router := httprouter.New()
 	router.GET("/courses", HandleCoursesFunction)
 	router.GET("/courses/:course", HandleCourseGet)
 	router.PUT("/courses/:course", HandleCoursePut)
-    router.POST("/courses/:course", HandleCoursePost)
+	router.POST("/courses/:course", HandleCoursePost)
 	router.DELETE("/courses/:course", HandleCourseDelete)
 
 	error := http.ListenAndServe(":8001", router)
