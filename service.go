@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 )
 
 type BaseCourseInfo struct {
@@ -33,9 +32,9 @@ var database *sql.DB
 func HandleCourseGet(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	courseSearched := ps.ByName("course")
 	course, err := getCourse(courseSearched)
-	if err != nil  {
+	if err != nil {
 		http.Error(w, "Course does not exist", 404)
-	}else {
+	} else {
 		var courseInfo BaseCourseInfo
 		resp, err := http.Get(course.URL)
 		if err != nil {
@@ -58,23 +57,6 @@ func HandleCourseGet(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 	}
 }
 
-func HandleCourseDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	courseDeleted := ps.ByName("course")
-	var indexDeleted int = -1
-	for index, course := range courseList.Courses {
-		if course.Id == courseDeleted {
-			indexDeleted = index
-		}
-	}
-	if indexDeleted == -1 {
-		http.Error(w, "Course not found", 404)
-	} else {
-		courseList.Courses = append(courseList.Courses[:indexDeleted], courseList.Courses[indexDeleted+1:]...)
-		fmt.Fprintf(w, "Cursul a fost sters")
-	}
-	UpdateCourseList()
-}
-
 func HandleCoursePut(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -84,39 +66,67 @@ func HandleCoursePut(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 	json.Unmarshal(body, &courseInfo)
 
 	courseSearched := ps.ByName("course")
-	var indexCourse int = -1
-	for index, course := range courseList.Courses {
-		if course.Id == courseSearched {
-			indexCourse = index
+	course, err := getCourse(courseSearched)
+	if err != nil || course.URL == "" {
+		err = insertCourse(courseInfo)
+		if err != nil {
+			http.Error(w, "Could not insert course.", http.StatusInternalServerError)
+		} else {
+			fmt.Fprintf(w, "Course inserted.")
+		}
+	} else {
+		err = updateCourse(courseInfo, courseSearched)
+		if err != nil {
+			http.Error(w, "Could not update course.", http.StatusInternalServerError)
+		} else {
+			fmt.Fprintf(w, "Course updated.")
 		}
 	}
-	if indexCourse == -1 {
-		courseList.Courses = append(courseList.Courses, courseInfo)
-	} else {
-		courseList.Courses[indexCourse].Id = courseInfo.Id
-		courseList.Courses[indexCourse].Name = courseInfo.Name
-		courseList.Courses[indexCourse].URL = courseInfo.URL
-	}
-	fmt.Fprintf(w, "Course updated/added")
-	UpdateCourseList()
-
 }
 
-func HandleCoursePost(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func updateCourse(info CourseInfo, id string) error {
+	stmt, err := database.Prepare("update courselist set id=?,url=? where id=?")
+	if err != nil {
+		return err
+	}
+	_, err = stmt.Exec(info.Id, info.URL, id)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func HandleCoursePost(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		fmt.Println(err)
+		http.Error(w, "Could not insert course.", http.StatusInternalServerError)
 	}
 	var courseInfo CourseInfo
 	json.Unmarshal(body, &courseInfo)
-	courseList.Courses = append(courseList.Courses, courseInfo)
-	fmt.Fprintf(w, "Course added.")
-	UpdateCourseList()
+	err = insertCourse(courseInfo)
+	if err != nil {
+		http.Error(w, "Could not insert course.", http.StatusInternalServerError)
+	} else {
+		fmt.Fprintf(w, "Course inserted.")
+	}
+
+}
+
+func insertCourse(info CourseInfo) error {
+	stmt, err := database.Prepare("INSERT courselist SET id=?,url=?")
+	if err != nil {
+		return err
+	}
+	_, err = stmt.Exec(info.Id, info.URL)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func HandleCoursesFunction(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	courses, err := getCourses("Select * from courselist")
-	if err != nil || courses == nil{
+	if err != nil || courses == nil {
 		http.Error(w, "No courses available", 404)
 	} else {
 		var courseInfo BaseCourseInfo
@@ -144,36 +154,59 @@ func HandleCoursesFunction(w http.ResponseWriter, r *http.Request, _ httprouter.
 
 }
 
-func UpdateCourseList() {
-	f, err := os.Create("courses.json")
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	defer f.Close()
-
-	data, err := json.Marshal(&courseList)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	f.Write(data)
-
-}
-
 func getCourse(id string) (*CourseInfo, error) {
-	query := "Select id,url from courselist where id like '" + id + "'"
-	rows, err := database.Query(query)
+	stmt, err := database.Prepare("Select id,url from courselist where id = ?")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := stmt.Query(id)
+	if err != nil {
+		return nil, err
+	}
 
 	if err != nil {
 		return nil, err
 	}
 	var item CourseInfo
 	rows.Next()
-		if err := rows.Scan(&item.Id, &item.URL); err != nil {
-			return nil, err
-		}
+	if err := rows.Scan(&item.Id, &item.URL); err != nil {
+		return nil, err
+	}
 	return &item, nil
+}
+
+func HandleCourseDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	idCourse := ps.ByName("course")
+
+	message, err := deleteCourse(idCourse)
+	if message == "failure" {
+		http.Error(w, "Course doesn't exist", 404)
+	} else if err != nil {
+		http.Error(w, "Course couldn't be deleted", http.StatusInternalServerError)
+	} else {
+		fmt.Fprintf(w, "Course deleted.")
+	}
+}
+
+func deleteCourse(idCourse string) (string, error) {
+	stmt, err := database.Prepare("delete from courselist where id = ?")
+	if err != nil {
+		return "", err
+	}
+	res, err := stmt.Exec(idCourse)
+	if err != nil {
+		return "", err
+	}
+
+	affect, err := res.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+
+	if affect == 0 {
+		return "failure", nil
+	}
+	return "succes", nil
 }
 
 func getCourses(sqlString string) (*CourseList, error) {
