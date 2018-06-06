@@ -1,3 +1,1 @@
-{"urls":["origami-course","survival-course","self-defence-course","example-course","astronomy-course"],
-"titles":["Origami Course","Survival Course","Self Defence Course","Example Course","Astronmy Course"],
-"descriptions":["This course will make you a paper wizard","Post-apocaliptic survival.","Learn fhu-thai.","An interesting course","This course will teach you astronomy."]}
+{"Courses":[{"id":"origami","name":"Origami Course","url":"http://127.0.0.1:8003/"},{"id":"survival","name":"Survival Course","url":"http://127.0.0.1:8003/"}]}

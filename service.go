@@ -15,15 +15,13 @@ type BaseCourseInfo struct {
 }
 
 type CourseInfo struct {
+	Id string `json:"id"`
+	Name       string `json:"name"`
 	URL         string `json:"url"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
 }
 
 type CourseList struct {
-	URLs         []string `json:"urls"`
-	Titles       []string `json:"titles"`
-	Descriptions []string `json:"descriptions"`
+	Courses []CourseInfo `json:"courses"`
 }
 
 var courseList CourseList
@@ -57,18 +55,18 @@ func HandleCourseGet(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 	courseSearched := ps.ByName("course")
 	var courseInfo CourseInfo
 	var indexCourse int = -1
-	for index, course := range courseList.URLs {
+	for index, course := range courseList.Courses{
 		fmt.Println(course)
-		if course == courseSearched {
+		if course.Id == courseSearched {
 			indexCourse = index
 		}
 	}
 	if indexCourse == -1 {
 		http.Error(w, "Course not found", 404)
 	} else {
-		courseInfo.URL = courseSearched
-		courseInfo.Description = courseList.Descriptions[indexCourse]
-		courseInfo.Title = courseList.Titles[indexCourse]
+		courseInfo.Id = courseSearched
+		courseInfo.URL= courseList.Courses[indexCourse].URL
+		courseInfo.Name = courseList.Courses[indexCourse].Name
 		data, err := json.Marshal(&courseInfo)
 		if err != nil {
 			fmt.Println(err)
@@ -81,18 +79,15 @@ func HandleCourseGet(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 func HandleCourseDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	courseDeleted := ps.ByName("course")
 	var indexDeleted int = -1
-	for index, course := range courseList.URLs {
-		fmt.Println(course)
-		if course == courseDeleted {
+	for index, course := range courseList.Courses{
+		if course.Id == courseDeleted {
 			indexDeleted = index
 		}
 	}
 	if indexDeleted == -1 {
 		http.Error(w, "Course not found", 404)
 	} else {
-		courseList.URLs = append(courseList.URLs[:indexDeleted], courseList.URLs[indexDeleted+1:]...)
-		courseList.Titles = append(courseList.Titles[:indexDeleted], courseList.Titles[indexDeleted+1:]...)
-		courseList.Descriptions = append(courseList.Descriptions[:indexDeleted], courseList.Descriptions[indexDeleted+1:]...)
+		courseList.Courses= append(courseList.Courses[:indexDeleted], courseList.Courses[indexDeleted+1:]...)
 		fmt.Fprintf(w, "Cursul a fost sters")
 	}
 	UpdateCourseList()
@@ -108,20 +103,17 @@ func HandleCoursePut(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 
 	courseSearched := ps.ByName("course")
 	var indexCourse int = -1
-	for index, course := range courseList.URLs {
-		fmt.Println(course)
-		if course == courseSearched {
+	for index, course := range courseList.Courses {
+		if course.Id == courseSearched {
 			indexCourse = index
 		}
 	}
 	if indexCourse == -1 {
-		courseList.URLs = append(courseList.URLs, courseInfo.URL)
-		courseList.Titles = append(courseList.Titles, courseInfo.Title)
-		courseList.Descriptions = append(courseList.Descriptions, courseInfo.Description)
+		courseList.Courses = append(courseList.Courses, courseInfo)
 	} else {
-		courseList.URLs[indexCourse] = courseInfo.URL
-		courseList.Titles[indexCourse] = courseInfo.Title
-		courseList.Descriptions[indexCourse] = courseInfo.Description
+		courseList.Courses[indexCourse].Id = courseInfo.Id
+		courseList.Courses[indexCourse].Name = courseInfo.Name
+		courseList.Courses[indexCourse].URL = courseInfo.URL
 	}
 	fmt.Fprintf(w, "Course updated/added")
 	UpdateCourseList()
@@ -135,9 +127,7 @@ func HandleCoursePost(w http.ResponseWriter, r *http.Request, _ httprouter.Param
 	}
 	var courseInfo CourseInfo
 	json.Unmarshal(body, &courseInfo)
-	courseList.URLs = append(courseList.URLs, courseInfo.URL)
-	courseList.Titles = append(courseList.Titles, courseInfo.Title)
-	courseList.Descriptions = append(courseList.Descriptions, courseInfo.Description)
+	courseList.Courses = append(courseList.Courses, courseInfo)
 	fmt.Fprintf(w, "Course added.")
 	UpdateCourseList()
 }
@@ -176,7 +166,7 @@ func main() {
 	router.GET("/courses", HandleCoursesFunction)
 	router.GET("/courses/:course", HandleCourseGet)
 	router.PUT("/courses/:course", HandleCoursePut)
-	router.POST("/courses/:course", HandleCoursePost)
+    router.POST("/courses/:course", HandleCoursePost)
 	router.DELETE("/courses/:course", HandleCourseDelete)
 
 	error := http.ListenAndServe(":8001", router)
