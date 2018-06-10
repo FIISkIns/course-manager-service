@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 type BaseCourseInfo struct {
@@ -38,22 +39,25 @@ func HandleCourseGet(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 		var courseInfo BaseCourseInfo
 		resp, err := http.Get(course.URL)
 		if err != nil {
-			fmt.Println(err)
-		}
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Println(err)
-		}
-		json.Unmarshal(body, &courseInfo)
-		course.Name = courseInfo.Title
+			http.Error(w, "Could not access the course", http.StatusInternalServerError)
+		} else {
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				http.Error(w, "Could not read from the course", http.StatusInternalServerError)
+			} else {
+				json.Unmarshal(body, &courseInfo)
+				course.Name = courseInfo.Title
 
-		data, err := json.Marshal(&course)
-		if err != nil {
-			http.Error(w, "Could not serialize course", http.StatusInternalServerError)
-		}
+				data, err := json.Marshal(&course)
+				if err != nil {
+					http.Error(w, "Could not serialize course", http.StatusInternalServerError)
+				} else {
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+					w.Header().Set("Content-Type", "application/json")
+					w.Write(data)
+				}
+			}
+		}
 	}
 }
 
@@ -126,6 +130,7 @@ func insertCourse(info CourseInfo) error {
 
 func HandleCoursesFunction(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	courses, err := getCourses("Select * from courselist")
+	worked := true
 	if err != nil || courses == nil {
 		http.Error(w, "No courses available", 404)
 	} else {
@@ -133,23 +138,26 @@ func HandleCoursesFunction(w http.ResponseWriter, r *http.Request, _ httprouter.
 		for index, course := range courses.Courses {
 			resp, err := http.Get(course.URL)
 			if err != nil {
-				fmt.Println(err)
+				http.Error(w, "Could not access "+course.Id, http.StatusInternalServerError)
+				worked = false
+			} else {
+				body, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					fmt.Println(err)
+				}
+				json.Unmarshal(body, &courseInfo)
+				courses.Courses[index].Name = courseInfo.Title
 			}
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				fmt.Println(err)
-			}
-			json.Unmarshal(body, &courseInfo)
-			courses.Courses[index].Name = courseInfo.Title
 		}
 
 		data, err := json.Marshal(&courses)
 		if err != nil {
 			http.Error(w, "Could not serialize course list", http.StatusInternalServerError)
+		} else if worked == true {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
 	}
 
 }
@@ -231,11 +239,36 @@ func getCourses(sqlString string) (*CourseList, error) {
 	return &courses, nil
 }
 
-func main() {
-	//user:password@protocol(host_ip:host_port)/database
-	var err error
-	database, err = sql.Open("mysql", "Gafi:bagpicioarele@tcp(127.0.0.1:3306)/courses")
+func initDatabase() error {
+	err := database.Ping()
 	if err != nil {
+		return err
+	}
+	var auxiliary int
+	err = database.QueryRow("SHOW TABLES LIKE 'courselist';").Scan(&auxiliary)
+	if err != nil && err == sql.ErrNoRows {
+		stmt, err := database.Prepare("create table courselist (" +
+			"id varchar(100) primary key," +
+			"url varchar(100) not null)")
+		if err != nil {
+			return err
+		}
+		_, err = stmt.Exec()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func main() {
+
+	var err error
+	initConfig()
+	database, err = sql.Open("mysql", config.DatabaseUrl)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := initDatabase(); err != nil {
 		log.Fatal(err)
 	}
 	defer database.Close()
@@ -246,9 +279,9 @@ func main() {
 	router.POST("/courses/:course", HandleCoursePost)
 	router.DELETE("/courses/:course", HandleCourseDelete)
 
-	error := http.ListenAndServe(":8001", router)
+	error := http.ListenAndServe(":"+strconv.Itoa(config.Port), router)
 	if error != nil {
-		panic(error)
+		log.Fatal(err)
 	}
 
 }
