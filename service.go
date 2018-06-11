@@ -135,7 +135,7 @@ func HandleCoursesFunction(w http.ResponseWriter, r *http.Request, _ httprouter.
 		http.Error(w, "No courses available", 404)
 	} else {
 		var courseInfo BaseCourseInfo
-		for index, course := range courses.Courses {
+		for index, course := range courses {
 			resp, err := http.Get(course.URL)
 			if err != nil {
 				http.Error(w, "Could not access "+course.Id, http.StatusInternalServerError)
@@ -146,7 +146,7 @@ func HandleCoursesFunction(w http.ResponseWriter, r *http.Request, _ httprouter.
 					fmt.Println(err)
 				}
 				json.Unmarshal(body, &courseInfo)
-				courses.Courses[index].Name = courseInfo.Title
+				courses[index].Name = courseInfo.Title
 			}
 		}
 
@@ -217,8 +217,8 @@ func deleteCourse(idCourse string) (string, error) {
 	return "succes", nil
 }
 
-func getCourses(sqlString string) (*CourseList, error) {
-	var courses CourseList
+func getCourses(sqlString string) ([]CourseInfo, error) {
+	var courses []CourseInfo
 	rows, err := database.Query(sqlString)
 	if err != nil {
 		return nil, err
@@ -229,14 +229,10 @@ func getCourses(sqlString string) (*CourseList, error) {
 		if err := rows.Scan(&item.Id, &item.URL); err != nil {
 			return nil, err
 		}
-		courses.Courses = append(courses.Courses, item)
+		courses = append(courses, item)
 	}
 
-	if len(courses.Courses) == 0 {
-		return nil, nil
-	}
-
-	return &courses, nil
+	return courses, nil
 }
 
 func initDatabase() error {
