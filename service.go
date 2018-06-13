@@ -34,8 +34,11 @@ func HandleCourseGet(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 	courseSearched := ps.ByName("course")
 	course, err := getCourse(courseSearched)
 	if err != nil {
-		http.Error(w, "Course "+courseSearched+" does not exist", 404)
-		log.Println("Course " + courseSearched + " does not exist")
+		http.Error(w, "Could not access the database for "+courseSearched+": "+err.Error(), http.StatusInternalServerError)
+		log.Println("Could not access the database for " + courseSearched + ": " + err.Error())
+	} else if course == nil {
+		http.Error(w, "Could not find course "+courseSearched, 404)
+		log.Println("Could not find course " + courseSearched)
 	} else {
 		var courseInfo BaseCourseInfo
 		resp, err := http.Get(course.URL)
@@ -139,9 +142,9 @@ func insertCourse(info CourseInfo) error {
 func HandleCoursesFunction(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	courses, err := getCourses("Select * from courselist")
 	worked := true
-	if err != nil || courses == nil {
-		http.Error(w, "No courses available", 404)
-		log.Println("No course available")
+	if err != nil {
+		http.Error(w, "Could not access the database: "+err.Error(), http.StatusInternalServerError)
+		log.Println("Could not access the database: " + err.Error())
 	} else {
 		var courseInfo BaseCourseInfo
 		for index, course := range courses {
@@ -299,12 +302,7 @@ func healthCheckHandler(w http.ResponseWriter, _ *http.Request, _ httprouter.Par
 		return
 	}
 
-	courses, err := getCourses("Select * from courselist")
-	if err != nil {
-		http.Error(w, "No courses found ", 404)
-		log.Println("No courses found")
-		return
-	}
+	courses, _ := getCourses("Select * from courselist")
 	for _, course := range courses {
 		if success := checkHealth(w, course.URL); !success {
 			return
