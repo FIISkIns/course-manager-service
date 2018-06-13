@@ -77,6 +77,7 @@ func HandleCoursePut(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 	json.Unmarshal(body, &courseInfo)
 
 	courseSearched := ps.ByName("course")
+	courseInfo.Id = courseSearched
 	course, err := getCourse(courseSearched)
 	if err != nil || course.URL == "" {
 		err = insertCourse(courseInfo)
@@ -117,6 +118,8 @@ func HandleCoursePost(w http.ResponseWriter, r *http.Request, ps httprouter.Para
 	}
 	var courseInfo CourseInfo
 	json.Unmarshal(body, &courseInfo)
+	idCourse := ps.ByName("course")
+	courseInfo.Id = idCourse
 	err = insertCourse(courseInfo)
 	if err != nil {
 		http.Error(w, "Could not insert course "+courseInfo.Id, http.StatusInternalServerError)
