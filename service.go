@@ -328,6 +328,7 @@ func main() {
 	router := httprouter.New()
 	router.GET("/courses", HandleCoursesFunction)
 	router.GET("/health", healthCheckHandler)
+	router.HEAD("/health", healthCheckHandler)
 	router.GET("/courses/:course", HandleCourseGet)
 	router.PUT("/courses/:course", HandleCoursePut)
 	router.POST("/courses/:course", HandleCoursePost)
