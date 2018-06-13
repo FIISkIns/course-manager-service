@@ -13,4 +13,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix nocgo -o /app .
 
 FROM scratch
 COPY --from=builder /app ./
-ENTRYPOINT ["./app"]
++ENTRYPOINT ["./app"]
++
++ENV MANAGER_PORT 80
++EXPOSE 80
