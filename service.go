@@ -290,7 +290,7 @@ func checkHealth(w http.ResponseWriter, url string) bool {
 		log.Println("Failed to read response from: " + url + "\nCause: " + err.Error())
 		return false
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		http.Error(w, "Failed health check on: "+url+"\nResponse: "+string(body), http.StatusInternalServerError)
 		log.Println("Failed health check on: " + url + "\nResponse: " + string(body))
 		return false
